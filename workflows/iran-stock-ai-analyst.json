@@ -1,0 +1,845 @@
+{
+  "name": "Iran Stock AI Analyst v6 — Fixed 52W and Horizon Models",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const input=$json.body??$json;\nconst entries=Object.entries(input);\nconst find=(name,word)=>{const exact=input[name];if(exact!==undefined)return exact;const hit=entries.find(([k])=>String(k).includes(word));return hit?.[1];};\nconst clean=s=>String(s??'').trim().replace(/ي/g,'ی').replace(/ك/g,'ک').replace(/\\s+/g,' ');\nconst customSymbol=clean(find('symbol','نماد دلخواه'));\nconst quickRaw=clean(find('quick_symbol','انتخاب سریع'));\nconst quickSymbol=quickRaw&& !quickRaw.includes('دلخواه') ? clean(quickRaw.split('|')[0]) : '';\nconst symbol=customSymbol||quickSymbol;\nif(!symbol)throw new Error('یک نماد را از فهرست انتخاب کنید یا نماد دلخواه را بنویسید');\nconst ownership=clean(find('ownership','وضعیت'));\nconst averagePrice=Number(find('average_price','میانگین')||0);\nreturn [{json:{symbol,ownership,owns:ownership.includes('بله')||ownership.includes('دارم')&&!ownership.includes('ندارم'),average_price:Number.isFinite(averagePrice)?averagePrice:0,horizon:clean(find('horizon','افق')),risk_profile:clean(find('risk_profile','ریسک')),requested_at:new Date().toISOString()}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1620,
+        0
+      ],
+      "id": "a2222222-2222-4222-8222-222222222222",
+      "name": "Normalize User Request"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://cdn.tsetmc.com/api/Instrument/GetInstrumentSearch/' + encodeURIComponent($json.symbol) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1400,
+        0
+      ],
+      "id": "a3333333-3333-4333-8333-333333333333",
+      "name": "TSETMC Search Symbol",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body=$json.body??$json;\nconst rows=body.instrumentSearch??[];\nconst requested=$('Normalize User Request').first().json.symbol;\nconst norm=s=>String(s??'').trim().replace(/ي/g,'ی').replace(/ك/g,'ک').replace(/[‌\\s]/g,'');\nif(!Array.isArray(rows)||!rows.length)throw new Error('نماد در TSETMC پیدا نشد یا API از موقعیت شبکه شما در دسترس نیست');\nconst exact=rows.find(x=>norm(x.lVal18AFC)===norm(requested));\nconst selected=exact??rows[0];\nif(!selected?.insCode)throw new Error('InsCode برای نماد پیدا نشد');\nreturn [{json:{...$('Normalize User Request').first().json,insCode:String(selected.insCode),resolved_symbol:selected.lVal18AFC??requested,company_name:selected.lVal30??'',isin:selected.cIsin??'',market:selected.flowTitle??selected.flow??'',exact_match:Boolean(exact),candidates:rows.slice(0,5).map(x=>({symbol:x.lVal18AFC,name:x.lVal30,insCode:String(x.insCode)}))}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1180,
+        0
+      ],
+      "id": "a4444444-4444-4444-8444-444444444444",
+      "name": "Resolve Instrument"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://cdn.tsetmc.com/api/ClosingPrice/GetClosingPriceInfo/' + $('Resolve Instrument').first().json.insCode }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -960,
+        0
+      ],
+      "id": "a5555555-5555-4555-8555-555555555555",
+      "name": "Get Current Quote",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://cdn.tsetmc.com/api/ClosingPrice/GetClosingPriceDailyList/' + $('Resolve Instrument').first().json.insCode + '/500' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -740,
+        0
+      ],
+      "id": "a6666666-6666-4666-8666-666666666666",
+      "name": "Get Daily Candles",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://cdn.tsetmc.com/api/ClientType/GetClientTypeHistory/' + $('Resolve Instrument').first().json.insCode }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -520,
+        0
+      ],
+      "id": "a7777777-7777-4777-8777-777777777777",
+      "name": "Get Client Type History",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://cdn.tsetmc.com/api/Instrument/GetInstrumentInfo/' + $('Resolve Instrument').first().json.insCode }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -300,
+        0
+      ],
+      "id": "a8888888-8888-4888-8888-888888888888",
+      "name": "Get Instrument Info",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://cdn.tsetmc.com/api/MarketData/GetInstrumentStatistic/' + $('Resolve Instrument').first().json.insCode }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -80,
+        0
+      ],
+      "id": "a9999999-9999-4999-8999-999999999999",
+      "name": "Get Instrument Statistics",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://cdn.tsetmc.com/api/Codal/GetPreparedDataByInsCode/20/' + $('Resolve Instrument').first().json.insCode }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        140,
+        0
+      ],
+      "id": "ab111111-1111-4111-8111-111111111111",
+      "name": "Get Codal Reports",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://cdn.tsetmc.com/api/ClosingPrice/GetClosingPriceDailyList/32097828799138957/500",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        360,
+        0
+      ],
+      "id": "ab222222-2222-4222-8222-222222222222",
+      "name": "Get TEDPIX History",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body=name=>{const j=$(name).first().json;return j?.body??j??{}};\nconst firstArray=o=>Object.values(o??{}).find(Array.isArray)??[];\nconst num=(...xs)=>{for(const x of xs){const n=Number(x);if(Number.isFinite(n))return n;}return null;};\nconst req=$('Resolve Instrument').first().json;\nconst quoteRaw=body('Get Current Quote');const quote=quoteRaw.closingPriceInfo??quoteRaw;\nconst histRaw=body('Get Daily Candles');const hist=histRaw.closingPriceDaily??histRaw.closingPriceDailyList??firstArray(histRaw);\nconst idxRaw=body('Get TEDPIX History');const idxRows=idxRaw.closingPriceDaily??idxRaw.closingPriceDailyList??firstArray(idxRaw);\nconst infoRaw=body('Get Instrument Info');const info=infoRaw.instrumentInfo??infoRaw;\nconst clientRaw=body('Get Client Type History');const client=clientRaw.clientTypeHistory??clientRaw.clientType??firstArray(clientRaw);\nconst codalRaw=body('Get Codal Reports');const reports=firstArray(codalRaw);\nconst statsRaw=body('Get Instrument Statistics');const stats=statsRaw.instrumentStatistic??firstArray(statsRaw);\nconst toBar=r=>({date:String(r.dEven??r.date??''),open:num(r.priceFirst,r.pFirst,r.pf),high:num(r.priceMax,r.pMax),low:num(r.priceMin,r.pMin),close:num(r.pClosing,r.priceClosing,r.pc),last:num(r.pDrCotVal,r.priceLast,r.pl),volume:num(r.qTotTran5J,r.volume)||0,value:num(r.qTotCap,r.value)||0,trades:num(r.zTotTran,r.count)||0});\nconst bars=(Array.isArray(hist)?hist:[]).map(toBar).filter(x=>x.date&&x.close>0).sort((a,b)=>a.date.localeCompare(b.date));\nif(bars.length<60)throw new Error(`داده تاریخی کافی نیست: ${bars.length} کندل دریافت شد`);\nconst closes=bars.map(x=>x.close),vols=bars.map(x=>x.volume);\nconst sma=(a,n)=>a.length<n?null:a.slice(-n).reduce((x,y)=>x+y,0)/n;\nconst emaSeries=(a,n)=>{const k=2/(n+1),out=[];let e=a[0];for(const v of a){e=v*k+e*(1-k);out.push(e);}return out;};\nconst ema=(a,n)=>a.length<n?null:emaSeries(a,n).at(-1);\nconst rsi=(a,n=14)=>{if(a.length<=n)return null;let g=0,l=0;for(let i=a.length-n;i<a.length;i++){const d=a[i]-a[i-1];if(d>=0)g+=d;else l-=d;}return l===0?100:100-100/(1+(g/n)/(l/n));};\nconst ret=n=>closes.length>n?(closes.at(-1)/closes.at(-1-n)-1)*100:null;\nconst std=a=>{const m=a.reduce((x,y)=>x+y,0)/a.length;return Math.sqrt(a.reduce((s,x)=>s+(x-m)**2,0)/a.length);};\nconst dailyRet=closes.slice(-61).map((v,i,a)=>i?100*(v/a[i-1]-1):0).slice(1);\nconst e12=emaSeries(closes,12),e26=emaSeries(closes,26),macd=e12.at(-1)-e26.at(-1);const signal=emaSeries(e12.map((v,i)=>v-e26[i]),9).at(-1);\nconst ema20=ema(closes,20),ema50=ema(closes,50),ema200=ema(closes,200),lastClose=closes.at(-1);\nconst last60=bars.slice(-60);const validLow=x=>Number(x)>0?Number(x):null;\nconst supportValues=last60.map(x=>validLow(x.low)??validLow(x.close)).filter(x=>x>0);const resistanceValues=last60.map(x=>validLow(x.high)??validLow(x.close)).filter(x=>x>0);\nconst support=supportValues.length?Math.min(...supportValues):lastClose;const resistance=resistanceValues.length?Math.max(...resistanceValues):lastClose;\nconst rows52=bars.slice(-240);const highs52=rows52.map(x=>validLow(x.high)??validLow(x.close)).filter(x=>x>0);const lows52=rows52.map(x=>validLow(x.low)??validLow(x.close)).filter(x=>x>0);\nconst hi52=highs52.length?Math.max(...highs52):lastClose;const lo52=lows52.length?Math.min(...lows52):lastClose;\nconst idxBars=(Array.isArray(idxRows)?idxRows:[]).map(toBar).filter(x=>x.date&&x.close>0).sort((a,b)=>a.date.localeCompare(b.date));const idxClose=idxBars.map(x=>x.close);const idxRet60=idxClose.length>60?(idxClose.at(-1)/idxClose.at(-61)-1)*100:null;const stockRet60=ret(60);\nconst recentClient=(Array.isArray(client)?client:[]).slice(0,10);let buyI=0,sellI=0,buyIC=0,sellIC=0;for(const x of recentClient){buyI+=num(x.buy_I_Value,x.buy_I_Volume)||0;sellI+=num(x.sell_I_Value,x.sell_I_Volume)||0;buyIC+=num(x.buy_CountI,x.buy_I_Count)||0;sellIC+=num(x.sell_CountI,x.sell_I_Count)||0;}const buyerPower=buyIC&&sellIC&&sellI?((buyI/buyIC)/(sellI/sellIC)):null;const netIndividual=buyI-sellI;\nconst pe=num(info.pe,quote.pe),eps=num(info.eps,quote.eps),sectorPe=num(info.sectorPE,quote.sectorPE);\nconst clamp=x=>Math.max(0,Math.min(100,Math.round(x)));const R=rsi(closes);\nlet shortScore=50+(lastClose>ema20?12:-12)+(ema20>ema50?12:-12)+(macd>signal?10:-10)+(R>=45&&R<=68?8:R>75?-10:R<30?4:-3)+(ret(20)>0?8:-8)+(buyerPower&&buyerPower>1.15?7:buyerPower&&buyerPower<.85?-7:0);\nlet longScore=50+(ema200?(lastClose>ema200?16:-16):0)+(ema200&&ema50>ema200?13:-10)+(stockRet60!==null&&idxRet60!==null?(stockRet60>idxRet60?10:-10):0)+(pe&&sectorPe?(pe<sectorPe?8:-5):0)+(lastClose>(lo52+(hi52-lo52)*.45)?5:-5);\nshortScore=clamp(shortScore);longScore=clamp(longScore);let flowScore=clamp(50+(buyerPower?Math.max(-25,Math.min(25,(buyerPower-1)*35)):0)+(netIndividual>0?10:netIndividual<0?-10:0));\n// سه برآورد مستقل؛ هر افق ورودی و وزن‌های مخصوص خودش را دارد.\nconst logReturns=closes.slice(-121).map((v,i,a)=>i?Math.log(v/a[i-1]):null).filter(x=>Number.isFinite(x)&&Math.abs(x)<.25);\nconst volDaily=logReturns.length?std(logReturns):0;\nconst bound=(x,lo,hi)=>Math.max(lo,Math.min(hi,x));\nconst r20=ret(20)??0,r60=ret(60)??r20*3,r240=ret(240)??r60*4;\nconst relative60=stockRet60!==null&&idxRet60!==null?stockRet60-idxRet60:0;\nconst momentum=(shortScore-50)/50,longTrend=(longScore-50)/50,flowTrend=(flowScore-50)/50;\nconst change1m=bound(.38*r20+.08*(r60/3)+3.5*momentum+1.5*flowTrend,-22,28);\nconst change3m=bound(.42*r60+.08*(r240/4)+7*(.6*momentum+.4*longTrend)+2*flowTrend,-40,55);\nconst change12m=bound(.32*r240+20*longTrend+.12*relative60+4*flowTrend,-55,110);\nconst makeScenario=(label,days,reliability,baseChange,driver)=>{const spread=100*volDaily*Math.sqrt(days);const lowChange=bound(baseChange-.9*spread,-75,180);const highChange=bound(baseChange+.9*spread,-75,180);const low=lastClose*(1+lowChange/100),base=lastClose*(1+baseChange/100),high=lastClose*(1+highChange/100);return {label,days,reliability,driver,low,base,high,low_change:lowChange,base_change:baseChange,high_change:highChange};};\nconst scenarios=[makeScenario('۱ ماه',21,'متوسط',change1m,'مومنتوم و بازده ۲۰روزه'),makeScenario('۳ ماه',63,'کم تا متوسط',change3m,'روند و بازده ۶۰روزه'),makeScenario('۱ سال',252,'کم',change12m,'روند ۲۴۰روزه و امتیاز بلندمدت')];\nlet action,actionLabel;if(req.owns){if(longScore>=65&&shortScore>=45){action='HOLD';actionLabel='نگهداری مشروط و پایش';}else if(longScore<45&&shortScore<40){action='REDUCE_OR_EXIT';actionLabel='بررسی کاهش وزن یا فروش';}else{action='REVIEW_HOLD';actionLabel='نگهداری با بازبینی حد ریسک';}}else{if(longScore>=65&&shortScore>=60){action='BUY_CANDIDATE';actionLabel='مناسب برای بررسی خرید پله‌ای';}else if(longScore>=58&&shortScore<55){action='WATCH_PULLBACK';actionLabel='ارزنده برای واچ‌لیست؛ ورود عجولانه نیست';}else{action='WAIT';actionLabel='فعلاً صبر و عدم ورود';}}\nconst bigGaps=bars.slice(-240).filter((x,i,a)=>i&&Math.abs(x.close/a[i-1].close-1)>.35).length;const quality=[];if(bigGaps)quality.push('جهش قیمتی بزرگ دیده شد؛ احتمال افزایش سرمایه/تعدیل و خطای سری تعدیل‌نشده وجود دارد.');if(!reports.length)quality.push('اطلاعیه کدال دریافت نشد.');if(!recentClient.length)quality.push('داده حقیقی/حقوقی دریافت نشد.');if(!req.exact_match)quality.push('نماد با نزدیک‌ترین نتیجه TSETMC تطبیق داده شد.');\nconst reportItems=(Array.isArray(reports)?reports:[]).slice(0,10).map(x=>({title:x.title??x.Title??x.subject??x.Subject??x.letterTitle??'گزارش کدال',date:x.publishDateTime??x.PublishDateTime??x.sentDateTime??x.SentDateTime??x.date??'',tracingNo:x.tracingNo??x.TracingNo??''}));\nconst avg=n=>sma(vols,n);const metrics={last_close:lastClose,last_price:num(quote.pDrCotVal,quote.priceLast,quote.pl)||bars.at(-1).last,change_1d:num(quote.priceYesterday,quote.py)?100*(lastClose/num(quote.priceYesterday,quote.py)-1):ret(1),return_20d:ret(20),return_60d:stockRet60,return_240d:ret(240),ema20,ema50,ema200,rsi14:R,macd,macd_signal:signal,volatility_60d:std(dailyRet)*Math.sqrt(252),volume_ratio_20_60:avg(60)?avg(20)/avg(60):null,support_60d:support,resistance_60d:resistance,high_52w:hi52,low_52w:lo52,buyer_power:buyerPower,net_individual_value:netIndividual,pe,eps,sector_pe:sectorPe,relative_return_60d:stockRet60!==null&&idxRet60!==null?stockRet60-idxRet60:null};\nreturn [{json:{profile:req,metrics,scores:{short_term:shortScore,long_term:longScore,money_flow:flowScore},rule_assessment:{action,label:actionLabel},scenarios,scenario_method:{name:'مدل مستقل برای افق‌های ۲۰، ۶۰ و ۲۴۰روزه',warning:'این اعداد سناریوی آماری هستند، نه پیش‌بینی قطعی یا قیمت هدف.'},reports:reportItems,quality_flags:quality,bars:bars.slice(-160),stats:stats.slice(0,30),sources:[{name:'TSETMC Price',url:`https://cdn.tsetmc.com/api/ClosingPrice/GetClosingPriceDailyList/${req.insCode}/500`},{name:'TSETMC Client Type',url:`https://cdn.tsetmc.com/api/ClientType/GetClientTypeHistory/${req.insCode}`},{name:'TSETMC Codal Proxy',url:`https://cdn.tsetmc.com/api/Codal/GetPreparedDataByInsCode/20/${req.insCode}`}],disclaimer:'این گزارش صرفاً آموزشی است و توصیه قطعی خرید یا فروش نیست.'}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "id": "ab333333-3333-4333-8333-333333333333",
+      "name": "Technical Fundamental Scoring"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=برای سهم {{ $json.profile.resolved_symbol }} یک جمع‌بندی بسیار کوتاه و شفاف بنویس. تصمیم، امتیازها و برآوردهای عددی موتور قانون‌محور را تغییر نده. قیمت هدف نساز. خروجی فقط JSON معتبر: {\"executive_summary\":\"حداکثر دو جمله\",\"decision_reason\":\"یک جمله روشن\",\"action_now\":\"یک اقدام روشن و محتاطانه\",\"next_review\":\"یک شرط روشن برای بررسی دوباره\",\"short_term_analysis\":\"یک جمله\",\"long_term_analysis\":\"یک جمله\",\"confirmation_signals\":[\"حداکثر ۳ مورد\"],\"warning_signals\":[\"حداکثر ۳ مورد\"],\"key_risks\":[\"حداکثر ۳ مورد\"],\"catalysts\":[\"حداکثر ۳ مورد\"],\"codal_reading\":\"حداکثر دو جمله\",\"confidence\":عدد_۰_تا_۱۰۰}. داده: {{ JSON.stringify({profile:$json.profile,metrics:$json.metrics,scores:$json.scores,rule_assessment:$json.rule_assessment,scenarios:$json.scenarios,reports:$json.reports,quality_flags:$json.quality_flags}) }}",
+        "options": {
+          "systemMessage": "تو تحلیل‌گر بازار سرمایه ایران هستی. ساده و مستقیم بنویس. تصمیم قانون‌محور را توضیح بده، نه اینکه عوض کنی. بین قیمت فعلی، برآورد مرکزی آماری و توصیه قطعی تفاوت روشن بگذار. همه قیمت‌ها ریال‌اند."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        0
+      ],
+      "id": "ab444444-4444-4444-8444-444444444444",
+      "name": "Iran Stock AI Analyst"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data=$('Technical Fundamental Scoring').first().json;\nconst raw=String($json.output??'').trim();let ai={};try{ai=JSON.parse(raw.replace(/^```json\\s*/i,'').replace(/```$/,'').trim());}catch{ai={executive_summary:raw||'تحلیل متنی مدل دریافت نشد.',decision_reason:'—',action_now:'—',next_review:'—',short_term_analysis:'—',long_term_analysis:'—',confirmation_signals:[],warning_signals:[],key_risks:[],catalysts:[],codal_reading:'—',confidence:40};}\nconst esc=s=>String(s??'—').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));\nconst compact=(s,n=250)=>esc(String(s??'—').replace(/\\s+/g,' ').slice(0,n));\nconst fmt=(n,d=1)=>Number.isFinite(Number(n))?Number(n).toLocaleString('fa-IR',{maximumFractionDigits:d}):'—';\nconst pct=n=>Number.isFinite(Number(n))?`${Number(n)>=0?'+':''}${fmt(n)}٪`:'—';\nconst clamp=n=>Math.max(0,Math.min(100,Number(n)||0));\nconst m=data.metrics,s=data.scores,p=data.profile,r=data.rule_assessment,sc=data.scenarios??[];\nconst last=Number(m.last_close),low52=Number(m.low_52w),high52=Number(m.high_52w);\nconst pricePos=clamp(100*(last-low52)/Math.max(1,high52-low52));\nconst actionClass=r.action==='BUY_CANDIDATE'?'buy':r.action==='REDUCE_OR_EXIT'?'sell':['HOLD','REVIEW_HOLD'].includes(r.action)?'hold':'wait';\nconst actionMeaning={BUY_CANDIDATE:'سهم شرایط اولیه بررسی خرید را دارد؛ ورود فقط پس از کنترل ریسک و تأیید روند.',WATCH_PULLBACK:'سهم در واچ‌لیست بماند؛ برای ورود عجله نکنید.',WAIT:'فعلاً ورود جدید توجیه کافی ندارد و بهتر است داده‌های بعدی پایش شوند.',HOLD:'منطق فعلی از نگهداری مشروط پشتیبانی می‌کند؛ نشانه‌های هشدار باید پایش شوند.',REVIEW_HOLD:'نگهداری نیازمند بازبینی است؛ قدرت روند برای تصمیم بدون شرط کافی نیست.',REDUCE_OR_EXIT:'ریسک موقعیت بالاست؛ کاهش وزن یا خروج باید براساس شرایط شخصی بررسی شود.'}[r.action]||'تصمیم با توجه به امتیازها و شرایط شخصی بررسی شود.';\nconst nextReview=ai.next_review&&ai.next_review!=='—'?ai.next_review:(s.short_term<50?'وقتی امتیاز کوتاه‌مدت به بالای ۵۵ برسد.':'پس از انتشار داده جدید یا تغییر محسوس جریان پول.');\nconst bars=data.bars??[],closes=bars.map(x=>Number(x.close));\nconst eSeries=(a,n)=>{const k=2/(n+1);let e=a[0];return a.map(v=>(e=v*k+e*(1-k)));};\nconst e20=eSeries(closes,20),e50=eSeries(closes,50),W=860,H=265,P=25;\nconst vals=[...closes,...e20,...e50].filter(Number.isFinite),mn=Math.min(...vals),mx=Math.max(...vals);\nconst point=(v,i,a)=>`${P+i*(W-2*P)/Math.max(1,a.length-1)},${H-P-(v-mn)*(H-2*P)/Math.max(1,mx-mn)}`;\nconst pts=a=>a.map((v,i)=>point(v,i,a)).join(' '),area=`${P},${H-P} ${pts(closes)} ${W-P},${H-P}`;\nconst trendSvg=`<svg viewBox=\"0 0 ${W} ${H}\" aria-label=\"روند قیمت\"><defs><linearGradient id=\"a\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#39d6a5\" stop-opacity=\".32\"/><stop offset=\"1\" stop-color=\"#39d6a5\" stop-opacity=\"0\"/></linearGradient></defs><polygon points=\"${area}\" fill=\"url(#a)\"/><polyline points=\"${pts(closes)}\" fill=\"none\" stroke=\"#39d6a5\" stroke-width=\"3\"/><polyline points=\"${pts(e20)}\" fill=\"none\" stroke=\"#f4c95d\" stroke-width=\"1.7\"/><polyline points=\"${pts(e50)}\" fill=\"none\" stroke=\"#7898ff\" stroke-width=\"1.7\"/></svg>`;\nconst gauge=(title,value,help)=>`<div class=\"gauge-box\"><div class=\"gauge\" style=\"--v:${clamp(value)}\"><div><b>${fmt(value,0)}</b><small>/۱۰۰</small></div></div><strong>${title}</strong><span>${help}</span></div>`;\nconst centralCards=sc.map(x=>{const dir=x.base_change>5?'رو به بالا':x.base_change<-5?'رو به پایین':'تقریباً خنثی';const tone=x.base_change>5?'positive':x.base_change<-5?'negative':'neutral';const reliability=x.reliability==='متوسط'?'برای پایش قابل‌استفاده':x.reliability==='کم تا متوسط'?'با احتیاط تفسیر شود':'صرفاً دید بلندمدت';return `<article class=\"forecast\"><header><b>${esc(x.label)}</b><span>${esc(x.reliability)}</span></header><small>مبنای محاسبه: ${esc(x.driver||'روند تاریخی')}</small><strong>${fmt(x.base,0)} <i>ریال</i></strong><div class=\"forecast-change ${tone}\">${dir} · ${pct(x.base_change)}</div><p>${reliability}. این عدد قیمت هدف نیست.</p></article>`;}).join('');\nconst list=arr=>(arr??[]).slice(0,3).map(x=>`<li>${compact(x,170)}</li>`).join('');\nconst confirms=ai.confirmation_signals?.length?ai.confirmation_signals:[`امتیاز کوتاه‌مدت بالاتر از ۶۰؛ مقدار فعلی ${fmt(s.short_term,0)}`,`جریان پول بالاتر از ۵۵؛ مقدار فعلی ${fmt(s.money_flow,0)}`];\nconst warnings=ai.warning_signals?.length?ai.warning_signals:[`افت امتیاز کوتاه‌مدت به زیر ۴۰`,`ضعیف‌شدن هم‌زمان جریان پول و روند`];\nconst risks=ai.key_risks?.length?ai.key_risks:['ریسک مشخصی ثبت نشده؛ این به معنی نبود ریسک نیست.'];\nconst cats=ai.catalysts?.length?ai.catalysts:['محرک معتبری از داده فعلی استخراج نشد.'];\nconst retRows=[['۱ روز',m.change_1d],['۲۰ روز',m.return_20d],['۶۰ روز',m.return_60d],['۲۴۰ روز',m.return_240d]].filter(x=>Number.isFinite(Number(x[1]))),maxRet=Math.max(8,...retRows.map(x=>Math.abs(x[1])));\nconst returnsHtml=retRows.map(([label,v])=>{const width=Math.min(50,Math.abs(v)/maxRet*48),left=v>=0?50:50-width;return `<div class=\"bar-row\"><span>${label}</span><div class=\"bar-axis\"><i class=\"${v>=0?'pos':'neg'}\" style=\"left:${left}%;width:${width}%\"></i></div><b class=\"${v>=0?'positive':'negative'}\">${pct(v)}</b></div>`;}).join('');\nconst reps=(data.reports??[]).slice(0,5).map(x=>`<tr><td>${esc(x.date)}</td><td>${esc(x.title)}</td></tr>`).join('')||'<tr><td colspan=\"2\">اطلاعیه‌ای دریافت نشد.</td></tr>';\nconst flags=(data.quality_flags??[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>هشدار کیفی ویژه‌ای ثبت نشد.</li>';\nconst avg=p.average_price>0?p.average_price:null,pnl=avg?100*(last/avg-1):null;\nconst html=`<!doctype html><html lang=\"fa\" dir=\"rtl\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>گزارش ${esc(p.resolved_symbol)}</title><style>@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap');*{box-sizing:border-box}body{margin:0;background:#050c17;color:#edf5ff;font-family:'Vazirmatn',Tahoma,sans-serif;line-height:1.7}.page{width:min(1180px,calc(100% - 24px));margin:18px auto 45px}.panel{background:linear-gradient(145deg,#0d2037,#07172a);border:1px solid #263f5b;border-radius:20px;box-shadow:0 18px 48px rgba(0,0,0,.25)}.hero{padding:24px 26px;display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center}.identity{display:flex;align-items:center;gap:14px}.symbol{display:grid;place-items:center;width:62px;height:62px;border-radius:18px;background:#0b293c;border:1px solid #31566f;color:#88f0cf;font-size:19px;font-weight:800}.hero h1{margin:0;font-size:25px}.hero p{margin:3px 0;color:#8da4bd;font-size:11px}.price{direction:ltr;font-weight:800}.verdict{min-width:235px;padding:13px 16px;border-radius:15px;text-align:center;font-weight:800}.verdict small{display:block;color:#91a6bc;font-size:9px;margin-top:3px}.verdict.buy{color:#79ecc7;background:rgba(57,214,165,.1);border:1px solid rgba(57,214,165,.35)}.verdict.hold{color:#ffe18a;background:rgba(244,201,93,.09);border:1px solid rgba(244,201,93,.3)}.verdict.sell{color:#ff9999;background:rgba(255,113,113,.09);border:1px solid rgba(255,113,113,.3)}.verdict.wait{color:#acbfff;background:rgba(120,152,255,.09);border:1px solid rgba(120,152,255,.3)}.section{margin-top:13px;padding:20px}.title{display:flex;justify-content:space-between;align-items:end;gap:10px;margin-bottom:13px}.title h2{margin:0;color:#a3f2d8;font-size:17px}.title p{margin:0;color:#8097b0;font-size:9px}.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.summary-card{padding:14px;border-radius:15px;background:#08192c;border:1px solid #203b58;min-height:125px}.summary-card:first-child{background:linear-gradient(145deg,rgba(57,214,165,.12),rgba(8,25,44,.9));border-color:rgba(57,214,165,.34)}.summary-card span,.summary-card small{display:block}.summary-card span{color:#839ab3;font-size:9px}.summary-card b{display:block;margin:7px 0;font-size:14px}.summary-card small{color:#a9bacb;font-size:10px}.executive{margin-top:9px;padding:12px 14px;border-radius:12px;background:#061529;border-right:3px solid #39d6a5;color:#b9cad9;font-size:10px}.forecasts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.forecast{padding:16px;border-radius:16px;background:#08192c;border:1px solid #213e5b}.forecast header{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px}.forecast header b{font-size:14px}.forecast header span{padding:3px 7px;border-radius:9px;border:1px solid #2e4a65;color:#8da4bd;font-size:8px}.forecast>small,.forecast>strong{display:block}.forecast>small{color:#849bb3;font-size:9px}.forecast>strong{font-size:23px;direction:ltr;text-align:right;margin:3px 0}.forecast>strong i{font-style:normal;font-size:9px;color:#8198b1}.forecast-change{font-size:11px;font-weight:700}.forecast p{margin:11px 0 0;padding-top:9px;border-top:1px solid #1e3751;color:#8fa5bc;font-size:9px}.positive{color:#59deb5!important}.negative{color:#ff8585!important}.neutral{color:#f3cb69!important}.price-position{margin-top:13px;padding:18px}.scale-wrap{direction:ltr;padding:44px 10px 0}.scale{height:12px;border-radius:20px;background:linear-gradient(90deg,#42648a,#39d6a5);position:relative}.pointer{position:absolute;left:${pricePos}%;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border:4px solid #fff;border-radius:50%;background:#0a1c30;box-shadow:0 4px 12px rgba(0,0,0,.5)}.pointer-label{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);white-space:nowrap;padding:5px 8px;border-radius:9px;background:#edf5ff;color:#071526;font:700 10px Vazirmatn}.pointer-label small{display:block;font-size:7px;color:#486078}.scale-labels{display:flex;justify-content:space-between;margin-top:8px}.scale-labels span{display:flex;flex-direction:column;color:#8299b2;font-size:8px}.scale-labels span:last-child{text-align:right}.scale-labels b{color:#dce8f4;font-size:10px}.two{display:grid;grid-template-columns:1.45fr .55fr;gap:13px;margin-top:13px}.chart-panel,.score-panel{padding:19px}.chart{background:#061326;border:1px solid #1d3654;border-radius:15px;padding:8px}.chart svg{display:block;width:100%;height:auto}.legend{display:flex;gap:13px;color:#849bb4;font-size:9px;margin-top:7px}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:5px}.gauges{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.gauge-box{text-align:center}.gauge{--v:50;width:94px;height:94px;border-radius:50%;margin:auto;background:conic-gradient(#39d6a5 calc(var(--v)*1%),#193149 0);display:grid;place-items:center;position:relative}.gauge:after{content:'';position:absolute;inset:9px;border-radius:50%;background:#09192c}.gauge div{position:relative;z-index:2;direction:ltr}.gauge b{font-size:20px}.gauge small{color:#738ba5}.gauge-box>strong,.gauge-box>span{display:block}.gauge-box>strong{font-size:10px;margin-top:5px}.gauge-box>span{font-size:8px;color:#8198b2}.score-help{margin-top:14px;padding:10px;border-radius:11px;background:#07172a;color:#8da4bd;font-size:8px}.score-help b{color:#dce8f4}.checks{display:grid;grid-template-columns:1fr 1fr;gap:10px}.check{padding:15px;border-radius:14px;background:#08192c;border:1px solid #203b58}.check.good{border-right:3px solid #39d6a5}.check.bad{border-right:3px solid #ff7171}.check h3{margin:0 0 7px;font-size:12px}.check ul,.insight ul{margin:0;padding-right:17px;color:#adbece;font-size:10px}.bar-row{display:grid;grid-template-columns:50px 1fr 62px;gap:8px;align-items:center;margin:13px 0;font-size:9px}.bar-axis{height:10px;border-radius:8px;background:linear-gradient(90deg,rgba(255,113,113,.12) 0 49.5%,#36506a 49.5% 50.5%,rgba(57,214,165,.12) 50.5%);position:relative}.bar-axis i{position:absolute;top:2px;height:6px;border-radius:8px}.bar-axis .pos{background:#39d6a5}.bar-axis .neg{background:#ff7171}.details{display:grid;grid-template-columns:1fr 1fr;gap:10px}.insight{padding:14px;border-radius:14px;background:#08192c;border:1px solid #203b58}.insight h3{margin:0 0 7px;font-size:11px}.metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-top:10px}.metric{padding:10px;background:#07182a;border:1px solid #1f3955;border-radius:11px}.metric span{display:block;color:#8097b0;font-size:8px}.metric b{display:block;margin-top:3px;font-size:11px;direction:ltr;text-align:right}table{width:100%;border-collapse:collapse;font-size:9px}th,td{padding:8px;border-bottom:1px solid #1e3853;text-align:right}th{color:#9ff0d5}.quality{margin-top:10px;padding:11px;border-radius:11px;background:rgba(244,201,93,.06);border:1px solid rgba(244,201,93,.22);color:#d7c98f;font-size:8px}.quality ul{margin:0;padding-right:16px}.foot{margin-top:13px;padding:13px 15px;color:#8198b2;font-size:8px;border-radius:14px;background:#071629;border:1px solid #1d354f}@media(max-width:900px){.summary{grid-template-columns:1fr 1fr}.forecasts{grid-template-columns:1fr}.two{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(3,1fr)}}@media(max-width:620px){.hero{grid-template-columns:1fr}.verdict{min-width:0}.summary,.checks,.details{grid-template-columns:1fr}.gauges{grid-template-columns:1fr}.metrics{grid-template-columns:1fr 1fr}.identity{align-items:flex-start}.symbol{width:52px;height:52px}.pointer-label{font-size:8px}}</style></head><body><main class=\"page\"><section class=\"panel hero\"><div class=\"identity\"><div class=\"symbol\">${esc(p.resolved_symbol)}</div><div><h1>${esc(p.company_name||p.resolved_symbol)}</h1><p>${esc(p.market)} · قیمت فعلی <span class=\"price\">${fmt(last,0)} ریال</span> · ${new Date().toLocaleString('fa-IR')}</p></div></div><div class=\"verdict ${actionClass}\">${esc(r.label)}<small>اطمینان تحلیل ${fmt(ai.confidence,0)}٪</small></div></section><section class=\"panel section\"><div class=\"title\"><h2>نتیجه‌ای که باید از گزارش بگیرید</h2><p>خلاصه روشن و بدون محدوده‌های معاملاتی</p></div><div class=\"summary\"><div class=\"summary-card\"><span>تصمیم امروز</span><b>${esc(r.label)}</b><small>${actionMeaning}</small></div><div class=\"summary-card\"><span>قیمت فعلی</span><b class=\"price\">${fmt(last,0)} ریال</b><small>آخرین قیمت پایانی دریافت‌شده از TSETMC</small></div><div class=\"summary-card\"><span>دلیل اصلی</span><b>${compact(ai.decision_reason,90)}</b><small>براساس روند، مومنتوم و جریان پول</small></div><div class=\"summary-card\"><span>زمان بررسی دوباره</span><b>${compact(nextReview,100)}</b><small>بعد از این تغییر، گزارش را دوباره اجرا کنید.</small></div></div><div class=\"executive\"><b>جمع‌بندی:</b> ${compact(ai.executive_summary)}</div>${avg?`<div class=\"executive\"><b>نسبت به میانگین خرید ${fmt(avg,0)} ریال:</b> <span class=\"${pnl>=0?'positive':'negative'}\">${pct(pnl)}</span></div>`:''}</section><section class=\"panel section\"><div class=\"title\"><h2>برآورد مرکزی آینده</h2><p>فقط یک عدد مرکزی؛ بدون بازه مبهم و بدون ادعای قیمت هدف</p></div><div class=\"forecasts\">${centralCards}</div></section><section class=\"panel price-position\"><div class=\"title\"><h2>قیمت فعلی دقیقاً کجای بازه ۵۲ هفته است؟</h2><p>مقایسه فقط با کمینه و بیشینه تاریخی</p></div><div class=\"scale-wrap\"><div class=\"scale\"><i class=\"pointer\"><span class=\"pointer-label\">${fmt(last,0)} ریال<small>قیمت فعلی</small></span></i></div><div class=\"scale-labels\"><span><b>${fmt(low52,0)}</b>کف ۵۲ هفته</span><span><b>${fmt(high52,0)}</b>سقف ۵۲ هفته</span></div></div></section><div class=\"two\"><section class=\"panel chart-panel\"><div class=\"title\"><h2>روند ۱۶۰ جلسه اخیر</h2><p>برای دیدن جهت حرکت، نه پیش‌بینی آینده</p></div><div class=\"chart\">${trendSvg}</div><div class=\"legend\"><span><i class=\"dot\" style=\"background:#39d6a5\"></i>قیمت</span><span><i class=\"dot\" style=\"background:#f4c95d\"></i>میانگین ۲۰روزه</span><span><i class=\"dot\" style=\"background:#7898ff\"></i>میانگین ۵۰روزه</span></div></section><aside class=\"panel score-panel\"><div class=\"title\"><h2>امتیازها</h2></div><div class=\"gauges\">${gauge('کوتاه‌مدت',s.short_term,'روند فعلی')}${gauge('بلندمدت',s.long_term,'وضعیت پایدارتر')}${gauge('جریان پول',s.money_flow,'رفتار حقیقی/حقوقی')}</div><div class=\"score-help\"><b>راهنما:</b> زیر ۴۰ ضعیف · ۴۰ تا ۵۹ خنثی · ۶۰ به بالا قوی‌تر</div></aside></div><section class=\"panel section\"><div class=\"title\"><h2>چه چیزی تصمیم را تغییر می‌دهد؟</h2></div><div class=\"checks\"><div class=\"check good\"><h3>نشانه‌های تأیید</h3><ul>${list(confirms)}</ul></div><div class=\"check bad\"><h3>نشانه‌های هشدار</h3><ul>${list(warnings)}</ul></div></div></section><div class=\"two\"><section class=\"panel section\"><div class=\"title\"><h2>بازده گذشته</h2><p>عملکرد تاریخی، نه پیش‌بینی</p></div>${returnsHtml}</section><section class=\"panel section\"><div class=\"title\"><h2>ریسک و محرک</h2></div><div class=\"details\"><div class=\"insight\"><h3>محرک‌های مثبت</h3><ul>${list(cats)}</ul></div><div class=\"insight\"><h3>ریسک‌های اصلی</h3><ul>${list(risks)}</ul></div></div><div class=\"metrics\"><div class=\"metric\"><span>RSI</span><b>${fmt(m.rsi14)}</b></div><div class=\"metric\"><span>قدرت خریدار</span><b>${fmt(m.buyer_power,2)}</b></div><div class=\"metric\"><span>نسبت حجم</span><b>${fmt(m.volume_ratio_20_60,2)}</b></div><div class=\"metric\"><span>بازده نسبی</span><b>${pct(m.relative_return_60d)}</b></div><div class=\"metric\"><span>P/E</span><b>${fmt(m.pe,2)}</b></div><div class=\"metric\"><span>نوسان سالانه</span><b>${fmt(m.volatility_60d)}٪</b></div></div></section></div><section class=\"panel section\"><div class=\"title\"><h2>آخرین اطلاعیه‌های کدال</h2><p>${compact(ai.codal_reading,170)}</p></div><table><thead><tr><th>تاریخ</th><th>عنوان اطلاعیه</th></tr></thead><tbody>${reps}</tbody></table><div class=\"quality\"><b>محدودیت داده:</b><ul>${flags}</ul></div></section><div class=\"foot\"><strong>سلب مسئولیت:</strong> ${esc(data.disclaimer)} برآوردهای آینده صرفاً برآورد مرکزی آماری‌اند و قیمت هدف یا تضمین بازده نیستند.</div></main></body></html>`;\nreturn [{json:{html,action:r.action,label:r.label,scores:s,scenarios:sc,symbol:p.resolved_symbol,current_price:last,price_52w_position:pricePos}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        0
+      ],
+      "id": "ab555555-5555-4555-8555-555555555555",
+      "name": "Build Premium HTML Report"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        820,
+        260
+      ],
+      "id": "ab777777-7777-4777-8777-777777777777",
+      "name": "OpenAI Chat Model"
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.toolCalculator",
+      "typeVersion": 1,
+      "position": [
+        1020,
+        260
+      ],
+      "id": "ab888888-8888-4888-8888-888888888888",
+      "name": "Financial Calculator"
+    },
+    {
+      "parameters": {
+        "content": "## ۱) پاپ‌آپ ورودی\nفرم RTL با اندازه استاندارد · انتخاب سریع نماد · نماد دلخواه · مالکیت · افق و ریسک",
+        "height": 240,
+        "width": 460,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1900,
+        -180
+      ],
+      "id": "ac111111-1111-4111-8111-111111111111",
+      "name": "Input Zone"
+    },
+    {
+      "parameters": {
+        "content": "## ۲) جمع‌آوری داده بازار ایران\nTSETMC · کندل · حقیقی/حقوقی · آمار · کدال · شاخص کل",
+        "height": 360,
+        "width": 1510,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1460,
+        -180
+      ],
+      "id": "ac222222-2222-4222-8222-222222222222",
+      "name": "Data Zone"
+    },
+    {
+      "parameters": {
+        "content": "## ۳) هوش تحلیلی\nامتیازدهی قانون‌محور + Agent برای روایت و ریسک‌ها",
+        "height": 500,
+        "width": 700,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        540,
+        -180
+      ],
+      "id": "ac333333-3333-4333-8333-333333333333",
+      "name": "AI Zone"
+    },
+    {
+      "parameters": {
+        "content": "## ۴) گزارش شفاف\nکف معتبر ۵۲ هفته · مدل مستقل ۱، ۳ و ۱۲ ماهه · قیمت فعلی · تأییدها و هشدارها",
+        "height": 300,
+        "width": 500,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1020,
+        -180
+      ],
+      "id": "ac444444-4444-4444-8444-444444444444",
+      "name": "Report Zone"
+    },
+    {
+      "parameters": {
+        "formTitle": "Iran Stock Intelligence Lab",
+        "formDescription": "داشبورد تصویری تحلیل کوتاه‌مدت، بلندمدت و سناریوهای احتمالی سهام ایران",
+        "formFields": {
+          "values": [
+            {
+              "fieldType": "html",
+              "html": "<div class=\"hero-box\"><span class=\"hero-icon\">📈</span><div><h2>رادار هوشمند سهام ایران</h2><p>نماد را انتخاب کنید تا روند، جریان پول، کدال و سناریوهای احتمالی آینده در یک داشبورد تصویری ساخته شود.</p></div></div><div class=\"feature-strip\"><span>روند قیمت</span><span>بازده</span><span>پول حقیقی</span><span>سناریو آینده</span><span>کدال</span></div><div class=\"notice\"><b>نکته:</b> اگر نماد در فهرست سریع نیست، گزینه اول را نگه دارید و نماد دقیق را در کادر بعدی بنویسید.</div>"
+            },
+            {
+              "fieldLabel": "انتخاب سریع نمادهای پرکاربرد",
+              "fieldName": "quick_symbol",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "نماد دلخواه را تایپ می‌کنم"
+                  },
+                  {
+                    "option": "فولاد | فولاد مبارکه اصفهان"
+                  },
+                  {
+                    "option": "فملی | ملی صنایع مس ایران"
+                  },
+                  {
+                    "option": "شپنا | پالایش نفت اصفهان"
+                  },
+                  {
+                    "option": "شبندر | پالایش نفت بندرعباس"
+                  },
+                  {
+                    "option": "شتران | پالایش نفت تهران"
+                  },
+                  {
+                    "option": "شبریز | پالایش نفت تبریز"
+                  },
+                  {
+                    "option": "فارس | صنایع پتروشیمی خلیج فارس"
+                  },
+                  {
+                    "option": "نوری | پتروشیمی نوری"
+                  },
+                  {
+                    "option": "پارس | پتروشیمی پارس"
+                  },
+                  {
+                    "option": "تاپیکو | سرمایه‌گذاری نفت و گاز تامین"
+                  },
+                  {
+                    "option": "شستا | سرمایه‌گذاری تامین اجتماعی"
+                  },
+                  {
+                    "option": "خودرو | ایران خودرو"
+                  },
+                  {
+                    "option": "خساپا | سایپا"
+                  },
+                  {
+                    "option": "خگستر | گسترش سرمایه‌گذاری ایران خودرو"
+                  },
+                  {
+                    "option": "وبملت | بانک ملت"
+                  },
+                  {
+                    "option": "وتجارت | بانک تجارت"
+                  },
+                  {
+                    "option": "وبصادر | بانک صادرات ایران"
+                  },
+                  {
+                    "option": "کگل | معدنی و صنعتی گل گهر"
+                  },
+                  {
+                    "option": "کچاد | معدنی و صنعتی چادرملو"
+                  },
+                  {
+                    "option": "ذوب | ذوب آهن اصفهان"
+                  },
+                  {
+                    "option": "فخوز | فولاد خوزستان"
+                  },
+                  {
+                    "option": "وغدیر | سرمایه‌گذاری غدیر"
+                  },
+                  {
+                    "option": "وامید | مدیریت سرمایه‌گذاری امید"
+                  },
+                  {
+                    "option": "حکشتی | کشتیرانی جمهوری اسلامی ایران"
+                  },
+                  {
+                    "option": "رمپنا | گروه مپنا"
+                  },
+                  {
+                    "option": "دانا | بیمه دانا"
+                  },
+                  {
+                    "option": "برکت | گروه دارویی برکت"
+                  }
+                ]
+              },
+              "defaultValue": "نماد دلخواه را تایپ می‌کنم",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "نماد دلخواه (اگر در فهرست بالا نیست)",
+              "fieldName": "symbol",
+              "fieldType": "text",
+              "placeholder": "مثلاً حکشتی، دتماد یا آریا",
+              "requiredField": false
+            },
+            {
+              "fieldLabel": "آیا در حال حاضر این سهم را دارید؟",
+              "fieldName": "ownership",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "خیر؛ این سهم را ندارم و می‌خواهم فرصت خرید را بررسی کنم"
+                  },
+                  {
+                    "option": "بله؛ این سهم را دارم و می‌خواهم نگهداری یا فروش را بررسی کنم"
+                  }
+                ]
+              },
+              "defaultValue": "خیر؛ این سهم را ندارم و می‌خواهم فرصت خرید را بررسی کنم",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "میانگین قیمت خرید به ریال (اختیاری)",
+              "fieldName": "average_price",
+              "fieldType": "number",
+              "placeholder": "مثلاً ۱۲۵۰۰",
+              "requiredField": false
+            },
+            {
+              "fieldLabel": "افق تصمیم",
+              "fieldName": "horizon",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "تحلیل کامل کوتاه‌مدت و بلندمدت"
+                  },
+                  {
+                    "option": "تمرکز کوتاه‌مدت"
+                  },
+                  {
+                    "option": "تمرکز بلندمدت"
+                  }
+                ]
+              },
+              "defaultValue": "تحلیل کامل کوتاه‌مدت و بلندمدت",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "ریسک‌پذیری",
+              "fieldName": "risk_profile",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "محافظه‌کار"
+                  },
+                  {
+                    "option": "متعادل"
+                  },
+                  {
+                    "option": "ریسک‌پذیر"
+                  }
+                ]
+              },
+              "defaultValue": "متعادل",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "buttonLabel": "ساخت داشبورد تحلیلی  ←",
+          "path": "iran-stock-ai-analyst",
+          "appendAttribution": false,
+          "customCss": "@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap');:root{--font-family:'Vazirmatn','Vazir',Tahoma,sans-serif;--font-size-body:14px;--font-size-label:13px;--font-size-input:14px;--font-size-header:29px;--font-size-paragraph:14px;--color-background:#050d1a;--color-card-bg:#09182b;--color-card-border:#294762;--color-card-shadow:rgba(0,0,0,.5);--color-header:#f8fafc;--color-label:#dce8f6;--color-input-border:#355679;--color-input-text:#f8fafc;--color-input-bg:#0d2038;--color-focus-border:#42d3a5;--color-submit-btn-bg:#35d6a4;--color-submit-btn-text:#04140e;--color-required:#42d3a5;--color-html-text:#dbe8f7;--border-radius-card:26px;--border-radius-input:13px;--padding-container-top:18px;--padding-card:28px;--padding-form-input:13px;--container-width:920px;--submit-btn-height:58px;--box-shadow-card:0 28px 90px rgba(0,0,0,.48)}html{direction:rtl;background:#050d1a}body{min-height:100vh;background:radial-gradient(circle at 88% 0,rgba(33,184,137,.22),transparent 28%),radial-gradient(circle at 0 100%,rgba(66,94,255,.18),transparent 34%),#050d1a;color:#f8fafc}body,.container,.card,input,textarea,select,button{font-family:var(--font-family)!important}.container{width:min(920px,calc(100% - 24px))!important;max-width:920px!important;padding:18px 0 30px!important;margin:auto!important}.card{width:100%!important;max-width:none!important;height:auto!important;max-height:none!important;overflow:visible!important;border:1px solid rgba(66,211,165,.27)!important;background:linear-gradient(145deg,rgba(15,31,54,.99),rgba(7,19,36,.99))!important;backdrop-filter:blur(18px)}.form-header{text-align:right;padding-bottom:16px;border-bottom:1px solid rgba(159,177,200,.14)}.form-header h1{font-weight:800;background:linear-gradient(90deg,#fff,#73e6c2);-webkit-background-clip:text;background-clip:text;color:transparent}.form-header p{line-height:1.8;color:#91a6bf}.inputs-wrapper{text-align:right;padding-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:0 16px}.form-group{margin-bottom:15px}.form-group:nth-child(1),.form-group:nth-child(2),.form-group:nth-child(3),.form-group:nth-child(4){grid-column:1/-1}form label{text-align:right!important;padding-bottom:7px;font-weight:700}form input,form select{direction:rtl;background:#0d2038!important;color:#f8fafc!important;min-height:50px!important;border-radius:13px!important}form input:focus,form select:focus{box-shadow:0 0 0 4px rgba(66,211,165,.11)!important}div.html{text-align:right!important;direction:rtl;color:#dbe8f7;line-height:1.8}.hero-box{display:flex;align-items:center;gap:15px;padding:18px;border:1px solid rgba(66,211,165,.25);border-radius:18px;background:linear-gradient(135deg,rgba(66,211,165,.1),rgba(48,87,190,.08))}.hero-icon{display:grid;place-items:center;flex:0 0 56px;width:56px;height:56px;border-radius:17px;background:#0a2133;font-size:28px;box-shadow:inset 0 0 0 1px #31526d}.hero-box h2{margin:0 0 5px;color:#9bf2d6;font-size:20px}.hero-box p{margin:0;color:#a8bbd0}.feature-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin:12px 0}.feature-strip span{text-align:center;padding:9px 4px;border-radius:11px;background:#08172a;border:1px solid #27415e;color:#9bf2d6;font-size:10px}.notice{padding:11px 13px;border-radius:12px;border:1px solid rgba(246,196,83,.25);background:rgba(246,196,83,.07);color:#ffe7a3;font-size:11px}.multiselect{direction:rtl;border:1px solid #355679!important;border-radius:13px!important;background:#0d2038!important;padding:7px!important}.multiselect-option label{color:#dce8f6!important}#submit-btn{grid-column:1/-1;font-weight:800;background:linear-gradient(135deg,#73e6c2,#21b889)!important;box-shadow:0 12px 32px rgba(33,184,137,.25);transition:.2s ease;border-radius:15px!important;margin-top:5px}#submit-btn:hover{opacity:1;transform:translateY(-2px);box-shadow:0 17px 42px rgba(33,184,137,.35)}@media(max-width:700px){:root{--padding-card:19px;--font-size-header:23px}.container{width:min(100% - 14px,920px)!important;padding-top:8px!important}.inputs-wrapper{grid-template-columns:1fr}.form-group{grid-column:1/-1!important}.feature-strip{grid-template-columns:repeat(3,1fr)}.hero-box{align-items:flex-start}.hero-icon{width:46px;height:46px;flex-basis:46px;font-size:22px}}"
+        }
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        -1840,
+        0
+      ],
+      "id": "a1111111-1111-4111-8111-111111111111",
+      "name": "Stock Analysis Form",
+      "webhookId": "b1111111-1111-4111-8111-111111111111"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "showText",
+        "responseText": "={{ $json.html }}"
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        0
+      ],
+      "id": "ab666666-6666-4666-8666-666666666666",
+      "name": "Interactive Stock Report",
+      "webhookId": "bb666666-6666-4666-8666-666666666666"
+    }
+  ],
+  "connections": {
+    "Normalize User Request": {
+      "main": [
+        [
+          {
+            "node": "TSETMC Search Symbol",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TSETMC Search Symbol": {
+      "main": [
+        [
+          {
+            "node": "Resolve Instrument",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Instrument": {
+      "main": [
+        [
+          {
+            "node": "Get Current Quote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Current Quote": {
+      "main": [
+        [
+          {
+            "node": "Get Daily Candles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Daily Candles": {
+      "main": [
+        [
+          {
+            "node": "Get Client Type History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Client Type History": {
+      "main": [
+        [
+          {
+            "node": "Get Instrument Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Instrument Info": {
+      "main": [
+        [
+          {
+            "node": "Get Instrument Statistics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Instrument Statistics": {
+      "main": [
+        [
+          {
+            "node": "Get Codal Reports",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Codal Reports": {
+      "main": [
+        [
+          {
+            "node": "Get TEDPIX History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get TEDPIX History": {
+      "main": [
+        [
+          {
+            "node": "Technical Fundamental Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Technical Fundamental Scoring": {
+      "main": [
+        [
+          {
+            "node": "Iran Stock AI Analyst",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Iran Stock AI Analyst": {
+      "main": [
+        [
+          {
+            "node": "Build Premium HTML Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Premium HTML Report": {
+      "main": [
+        [
+          {
+            "node": "Interactive Stock Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Iran Stock AI Analyst",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Financial Calculator": {
+      "ai_tool": [
+        [
+          {
+            "node": "Iran Stock AI Analyst",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stock Analysis Form": {
+      "main": [
+        [
+          {
+            "node": "Normalize User Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
