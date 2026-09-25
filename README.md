@@ -5,7 +5,7 @@
 
 **An experimental n8n workflow combining Iranian market data, rule-based analysis and AI-written explanations.**
 
-[فارسی](README.fa.md) · [Workflow](workflows/iran-stock-ai-analyst.json) · [Launch kit](docs/LINKEDIN_POSTS.md)
+[فارسی](README.fa.md) · [Workflow](workflows/iran-stock-ai-analyst.json)
 
 <a href="assets/agent-flow-en.png"><img src="assets/agent-flow-en.png" width="560" alt="Illustrated five-stage research workflow: input, market data, scoring, AI agent and report"></a>
 
@@ -75,8 +75,6 @@ The most important boundaries are documented, not hidden:
 - Action labels are research prompts, not personalized investment recommendations. Owning a stock changes the action vocabulary, not the validity of the underlying evidence.
 - Public endpoints can change, fail or return incomplete data. The RSI calculation is a simplified recent-gain/loss calculation, not Wilder smoothing.
 
-See [publication and validation checklist](docs/PUBLISHING_CHECKLIST.md) before sharing results.
-
 ## Next experiments
 
 - [ ] Calendar-aware history coverage and explicit data-quality flags
@@ -90,7 +88,6 @@ See [publication and validation checklist](docs/PUBLISHING_CHECKLIST.md) before 
 
 - `workflows/` — importable, inactive workflow export with instance metadata removed
 - `assets/` — illustrated workflow posters in two languages and screenshots of the real workflow
-- `docs/` — bilingual LinkedIn copy and a release checklist
 
 The posters are conceptual AI-assisted illustrations, not screenshots or depictions of actual returns. Screenshots document the workflow UI; they do not validate financial performance. No open-source license has been selected yet; choose one before describing the repository as open source.
 
